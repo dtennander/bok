@@ -1,8 +1,4 @@
-use std::{
-    env::current_dir,
-    fs::{create_dir, create_dir_all},
-    io::Result,
-};
+use std::{env::current_dir, fs::create_dir_all, io::Result};
 
 use bok::{EntryLine, Ledger, Side};
 use clap::{Parser, Subcommand};

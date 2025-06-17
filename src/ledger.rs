@@ -1,4 +1,4 @@
-use std::{io::Result, path::PathBuf, rc::Rc};
+use std::{fs::write, io::Result, path::PathBuf, rc::Rc};
 
 use crate::{Entry, EntryLine};
 
@@ -20,15 +20,21 @@ impl Ledger {
         name: impl Into<String>,
         description: impl Into<String>,
         lines: Vec<EntryLine>,
-    ) -> Result<Rc<Entry>> {
-        let new_entry = Entry::create_new(
+    ) -> Result<Entry> {
+        let new_head = Entry::create_new(
             self.location.as_path(),
             name,
             description,
             lines,
             self.head.clone(),
         )?;
-        self.head = Rc::new(new_entry);
-        Ok(self.head.clone())
+        self.switch_head(&new_head)?;
+        Ok(new_head)
+    }
+
+    fn switch_head(&mut self, new_head: &Entry) -> Result<()> {
+        self.head = Rc::new(new_head.clone());
+        let head_path = self.location.join("HEAD");
+        write(head_path, new_head.get_hash_hex())
     }
 }

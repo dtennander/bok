@@ -9,7 +9,7 @@ use hex::ToHex;
 use sha2::{Digest, Sha256};
 
 /// Entry in the General Ledger.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Entry {
     Entry {
         name: String,
@@ -50,7 +50,7 @@ impl Entry {
         Ok(entry)
     }
 
-    fn get_hash_hex(&self) -> String {
+    pub(crate) fn get_hash_hex(&self) -> String {
         let mut buffer: Vec<u8> = vec![];
         self.serialize(&mut buffer).expect("This will not fail");
         let mut hasher = Sha256::new();
@@ -86,7 +86,7 @@ impl Entry {
     /// |                                                                       |
     /// +--------+--------+--------+--------+--------+--------+--------+--------+
     ///
-    fn serialize<W: Write>(&self, mut output: W) -> Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, mut output: W) -> Result<()> {
         match self {
             Entry::Origin { year } => {
                 // Write discriminant for Origin
@@ -133,7 +133,7 @@ impl Entry {
 }
 
 /// Journal EntryLine used for accounting
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EntryLine {
     account: String,
     amount: usize, // Amount in smallest currency unit
@@ -141,7 +141,7 @@ pub struct EntryLine {
     description: Option<String>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Side {
     Debit,
     Credit,
