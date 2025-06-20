@@ -28,10 +28,8 @@ fn main() -> Result<()> {
             amount,
             description,
         } => {
-            let default_path = current_dir()?.join(".bok/");
-            if !default_path.exists() {
-                create_dir_all(&default_path)?;
-            }
+            let default_path = current_dir()?.join(".bok");
+            create_dir_all(&default_path)?;
             let mut ledger = Ledger::new(2025, default_path);
 
             let left_str = left.to_string();

@@ -1,10 +1,9 @@
 use std::{
-    fs::write,
     io::{Result, Write},
-    path::Path,
     rc::Rc,
 };
 
+use crate::tee_writer::TeeWriter;
 use hex::ToHex;
 use sha2::{Digest, Sha256};
 
@@ -24,7 +23,6 @@ pub enum Entry {
 
 impl Entry {
     pub(crate) fn create_new(
-        location: &Path,
         name: impl Into<String>,
         description: impl Into<String>,
         lines: Vec<EntryLine>,
@@ -36,17 +34,6 @@ impl Entry {
             lines,
             previous_entry,
         };
-        let mut buffer: Vec<u8> = vec![];
-        entry
-            .serialize(&mut buffer)
-            .expect("Should not break the stack");
-        let hash: String = {
-            let mut hasher = Sha256::new();
-            hasher.update(&buffer);
-            hasher.finalize().encode_hex()
-        };
-        let path = location.join(hash);
-        write(path, buffer)?;
         Ok(entry)
     }
 
@@ -86,7 +73,9 @@ impl Entry {
     /// |                                                                       |
     /// +--------+--------+--------+--------+--------+--------+--------+--------+
     ///
-    pub(crate) fn serialize<W: Write>(&self, mut output: W) -> Result<()> {
+    pub(crate) fn serialize<W: Write>(&self, output: W) -> Result<String> {
+        let mut output = TeeWriter::new(output, Sha256::new());
+
         match self {
             Entry::Origin { year } => {
                 // Write discriminant for Origin
@@ -128,7 +117,8 @@ impl Entry {
             }
         }
         output.flush()?;
-        Ok(())
+        let (_, hash) = output.into_inner();
+        Ok(hash.finalize().encode_hex())
     }
 }
 
