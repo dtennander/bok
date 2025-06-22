@@ -1,9 +1,6 @@
-use std::{
-    io::{Result, Write},
-    rc::Rc,
-};
+use std::io::{Result, Write, empty};
 
-use crate::tee_writer::TeeWriter;
+use crate::{read::read, tee_writer::TeeWriter};
 use hex::ToHex;
 use sha2::{Digest, Sha256};
 
@@ -14,7 +11,7 @@ pub enum Entry {
         name: String,
         description: String,
         lines: Vec<EntryLine>,
-        previous_entry: Rc<Entry>,
+        previous_entry: String,
     },
     Origin {
         year: usize,
@@ -26,7 +23,7 @@ impl Entry {
         name: impl Into<String>,
         description: impl Into<String>,
         lines: Vec<EntryLine>,
-        previous_entry: Rc<Entry>,
+        previous_entry: String,
     ) -> Result<Entry> {
         let entry = Entry::Entry {
             name: name.into(),
@@ -38,11 +35,7 @@ impl Entry {
     }
 
     pub(crate) fn get_hash_hex(&self) -> String {
-        let mut buffer: Vec<u8> = vec![];
-        self.serialize(&mut buffer).expect("This will not fail");
-        let mut hasher = Sha256::new();
-        hasher.update(&buffer);
-        hasher.finalize().encode_hex()
+        self.serialize(empty()).expect("This will not fail")
     }
 
     /// Serialize an entry into binary form
@@ -112,13 +105,65 @@ impl Entry {
                 }
 
                 // Write previous_entry_id (32 bytes) at the end
-                let previous_hex = previous_entry.get_hash_hex();
-                output.write_all(&previous_hex.into_bytes())?;
+                output.write_all(&previous_entry.clone().into_bytes())?;
             }
         }
         output.flush()?;
         let (_, hash) = output.into_inner();
         Ok(hash.finalize().encode_hex())
+    }
+
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Empty byte array",
+            ));
+        }
+        let mut cursor = 0;
+        // Read discriminant
+        let discriminant = bytes[0];
+        cursor += 1;
+
+        match discriminant {
+            0x00 => {
+                // Origin variant: need 8 more bytes for year
+                read!(year(u64) as usize from bytes[cursor]);
+                Ok(Entry::Origin { year })
+            }
+            0x01 => {
+                read!(name_len(u32) as usize from bytes[cursor]);
+                read!(desc_len(u32) as usize from bytes[cursor]);
+                read!(name(name_len) as String from bytes[cursor]);
+                read!(description(desc_len) as String from bytes[cursor]);
+                read!(lines_count(u32) from bytes[cursor]);
+
+                // Read lines
+                let mut lines = Vec::new();
+                for i in 0..lines_count {
+                    let (line, consumed) =
+                        EntryLine::from_bytes(&bytes[cursor..]).map_err(|e| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Failed to deserialize line {}: {}", i, e),
+                            )
+                        })?;
+                    cursor += consumed;
+                    lines.push(line);
+                }
+                read!(previous_entry(32) as String from bytes[cursor]);
+                Ok(Entry::Entry {
+                    name,
+                    description,
+                    lines,
+                    previous_entry,
+                })
+            }
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unknown discriminant: {:#04x}", discriminant),
+            )),
+        }
     }
 }
 
@@ -199,5 +244,66 @@ impl EntryLine {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn from_bytes(bytes: &[u8]) -> std::io::Result<(Self, usize)> {
+        let mut cursor = 0;
+
+        // Need at least 14 bytes for the fixed fields (account_len + amount + side + d_flag)
+        if bytes.len() < 14 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Insufficient bytes for EntryLine header",
+            ));
+        }
+        read!(account_len(u32) as usize from bytes[cursor]);
+        read!(amount(u64) as usize from bytes[cursor]);
+        // Read side (1 byte)
+        let side_byte = bytes[cursor];
+        let side = match side_byte {
+            0x00 => Side::Credit,
+            0x01 => Side::Debit,
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid side byte: {:#04x}", side_byte),
+                ));
+            }
+        };
+        cursor += 1;
+
+        // Read description flag (1 byte)
+        let desc_flag = bytes[cursor];
+        let has_description = match desc_flag {
+            0x00 => false,
+            0x01 => true,
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid description flag: {:#04x}", desc_flag),
+                ));
+            }
+        };
+        cursor += 1;
+
+        read!(account(account_len) as String from bytes[cursor]);
+
+        // Read description if present
+        let description = if has_description {
+            read!(desc_len(u32) as usize from bytes[cursor]);
+            read!(desc(desc_len) as String from bytes[cursor]);
+            Some(desc)
+        } else {
+            None
+        };
+
+        let entry_line = EntryLine {
+            account,
+            amount,
+            side,
+            description,
+        };
+
+        Ok((entry_line, cursor))
     }
 }
