@@ -57,7 +57,8 @@ fn main() -> Result<()> {
         BokCommand::Show { hash } => {
             let hash = ledger.from_ref(&hash)?;
             let entry = ledger.get_entry(&hash)?;
-            dbg!(entry);
+            let show = entry.show_short();
+            print!("{}", show);
         }
         BokCommand::Init { .. } => {
             panic!("Shouldn't happen!")
