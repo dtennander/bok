@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, hash_map::Entry as HashEntry},
-    fs::{self, DirEntry, create_dir_all, read, write},
-    io::{Error, Result},
+    fs::{self, create_dir_all, read, write},
+    io::{Error, ErrorKind, Result},
     path::PathBuf,
 };
 
@@ -27,16 +27,51 @@ impl AsRef<str> for EntryHash {
 }
 
 impl Ledger {
-    pub fn new(year: usize, location: PathBuf) -> Self {
-        let head = Entry::Origin { year };
-        let head_hash = head.get_hash_hex();
-        Self {
+    pub fn init(year: usize, location: PathBuf) -> Result<Self> {
+        if location.is_dir() {
+            return Err(Error::new(
+                ErrorKind::DirectoryNotEmpty,
+                "Directory isn't empty",
+            ));
+        }
+        create_dir_all(&location)?;
+
+        let head = Entry::Origin { year: year as u64 };
+        let mut buffer = vec![];
+        let hash = head.serialize(&mut buffer)?;
+        let head_path = location.join("HEAD");
+        write(&head_path, &hash)?;
+        let object_path = location.join("objects");
+        create_dir_all(&object_path)?;
+        write(object_path.join(&hash), buffer)?;
+        Ok(Self {
+            head,
+            head_hash: hash,
+            head_path,
+            object_path,
+            hash_map: HashMap::new(),
+        })
+    }
+
+    pub fn from_dir(location: PathBuf) -> Result<Self> {
+        if !location.is_dir() {
+            return Err(Error::new(
+                std::io::ErrorKind::NotADirectory,
+                "Directory doesn't exist",
+            ));
+        }
+        let head_path = location.join("HEAD");
+        let head_hash = String::from_utf8(read(&head_path)?)
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "Couldn't parse HEAD file..."))?;
+        let object_path = location.join("objects");
+        let head = Entry::from_file(&object_path.join(&head_hash))?;
+        Ok(Self {
             head,
             head_hash,
-            object_path: location.join("objects"),
-            head_path: location.join("HEAD"),
+            object_path,
+            head_path,
             hash_map: HashMap::new(),
-        }
+        })
     }
 
     pub fn add_entry(
@@ -55,6 +90,17 @@ impl Ledger {
         self.head_hash = hash;
         self.head = new_head;
         Ok(EntryHash(self.head_hash.clone()))
+    }
+
+    pub fn from_ref(&self, entry_ref: &str) -> Result<EntryHash> {
+        if entry_ref == "HEAD" {
+            return Ok(EntryHash(self.head_hash.clone()));
+        }
+        match &self.find_hash(entry_ref)?[..] {
+            [] => Err(Error::new(ErrorKind::NotFound, "ref not found")),
+            [entry_hash] => Ok(entry_hash.clone()),
+            _ => Err(Error::new(ErrorKind::TooManyLinks, "To many refs match")),
+        }
     }
 
     pub fn find_hash(&self, hash: &str) -> Result<Vec<EntryHash>> {
@@ -77,9 +123,8 @@ impl Ledger {
     pub fn get_entry(&mut self, hash: &EntryHash) -> Result<&Entry> {
         match self.hash_map.entry(hash.0.clone()) {
             HashEntry::Vacant(ve) => {
-                let bytes = read(self.object_path.join(hash.0.clone()))?;
-                let val = Entry::from_bytes(&bytes)?;
-                let entry_ref = ve.insert(val);
+                let entry_file = self.object_path.join(hash.0.clone());
+                let entry_ref = ve.insert(Entry::from_file(&entry_file)?);
                 Ok(entry_ref)
             }
             HashEntry::Occupied(o) => Ok(o.into_mut()),

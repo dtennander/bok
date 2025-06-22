@@ -1,4 +1,8 @@
-use std::io::{Result, Write, empty};
+use std::{
+    fs::read,
+    io::{Result, Write},
+    path::Path,
+};
 
 use crate::{read::read, tee_writer::TeeWriter};
 use hex::ToHex;
@@ -14,7 +18,7 @@ pub enum Entry {
         previous_entry: String,
     },
     Origin {
-        year: usize,
+        year: u64,
     },
 }
 
@@ -34,11 +38,9 @@ impl Entry {
         Ok(entry)
     }
 
-    pub(crate) fn get_hash_hex(&self) -> String {
-        self.serialize(empty()).expect("This will not fail")
-    }
-
     /// Serialize an entry into binary form
+    ///
+    /// Returns the hash as the result if successful
     ///
     /// Origin Variant (0x00):
     /// +--------+--------+--------+--------+--------+--------+--------+--------+
@@ -113,6 +115,11 @@ impl Entry {
         Ok(hash.finalize().encode_hex())
     }
 
+    pub fn from_file(path: &Path) -> Result<Self> {
+        let bytes = read(path)?;
+        Self::from_bytes(&bytes)
+    }
+
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.is_empty() {
             return Err(std::io::Error::new(
@@ -128,7 +135,7 @@ impl Entry {
         match discriminant {
             0x00 => {
                 // Origin variant: need 8 more bytes for year
-                read!(year(u64) as usize from bytes[cursor]);
+                read!(year(u64) from bytes[cursor]);
                 Ok(Entry::Origin { year })
             }
             0x01 => {

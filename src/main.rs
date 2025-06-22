@@ -1,4 +1,4 @@
-use std::{env::current_dir, fs::create_dir_all, io::Result};
+use std::{env::current_dir, io::Result, path::PathBuf};
 
 use bok::{EntryLine, Ledger, Side};
 use clap::{Parser, Subcommand};
@@ -20,15 +20,24 @@ enum BokCommand {
     Show {
         hash: String,
     },
+    Init {
+        year: usize,
+        dir: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
     let args = BokArgs::parse();
 
     let default_path = current_dir()?.join(".bok");
-    create_dir_all(&default_path)?;
-    let mut ledger = Ledger::new(2025, default_path);
 
+    if let BokCommand::Init { year, dir } = args.command {
+        Ledger::init(year, dir.unwrap_or(default_path))?;
+        println!("Ledger initialized");
+        return Ok(());
+    }
+
+    let mut ledger = Ledger::from_dir(default_path)?;
     match args.command {
         BokCommand::Rec {
             left,
@@ -45,14 +54,14 @@ fn main() -> Result<()> {
             let entry_ref = ledger.add_entry("A1", description, lines)?;
             dbg!(ledger.get_entry(&entry_ref)?);
         }
-        BokCommand::Show { hash } => match &(ledger.find_hash(&hash)?[..]) {
-            [hash] => {
-                let entry = ledger.get_entry(hash)?;
-                dbg!(entry);
-            }
-            [] => println!("No entry found..."),
-            _ => println!("Not a unique prefix"),
-        },
+        BokCommand::Show { hash } => {
+            let hash = ledger.from_ref(&hash)?;
+            let entry = ledger.get_entry(&hash)?;
+            dbg!(entry);
+        }
+        BokCommand::Init { .. } => {
+            panic!("Shouldn't happen!")
+        }
     }
     Ok(())
 }
