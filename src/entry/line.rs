@@ -2,7 +2,7 @@ use crate::read::read;
 use std::io::{Result, Write};
 
 /// Journal EntryLine used for accounting
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryLine {
     pub account: String,
     pub amount: usize, // Amount in smallest currency unit
@@ -10,7 +10,7 @@ pub struct EntryLine {
     pub description: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub enum Side {
     Debit,
     Credit,

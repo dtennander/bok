@@ -60,7 +60,7 @@ fn main() -> Result<()> {
         BokCommand::Show { entry_ref } => {
             let hash = ledger.from_ref(&entry_ref)?;
             let entry = ledger.get_entry(&hash)?;
-            let show = entry.show_short();
+            let show = entry.show();
             print!("{}", show);
         }
         BokCommand::Log { start } => {

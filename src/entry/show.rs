@@ -1,31 +1,36 @@
 use super::{Entry, Side};
+use std::io::Result;
 
 impl Entry {
     /// Prints the Entry in a short format, often used in log.
     ///
     /// Example:
+    /// ```ignore
+    ///   2025-05-01: My Title
+    ///   A long description of what happened.
     ///
-    /// 2025-05-01: My Title
-    /// A long description of what happened.
-    ///
-    ///            debit  |  credit
-    /// account 1     100 |           # Short description.
-    /// account 2         |     100   # Second description
-    ///
+    ///              debit  |  credit
+    ///   account 1     100 |           # Short description.
+    ///   account 2         |     100   # Second description
+    /// ```
     pub fn show(&self) -> String {
         match self {
-            Entry::Origin { year } => {
-                format!("----------------{}---------------\n", year)
+            Entry::Origin { timestamp, year } => {
+                format!("{}, Origin of {}\n", timestamp, year)
             }
             Entry::Entry {
+                event_date,
+                timestamp,
                 name,
                 description,
                 lines,
                 ..
             } => {
                 let mut result = String::new();
-                result.push_str(name);
-                result.push('\n');
+                result.push_str(&format!(
+                    "{} (recorded: {}): {}\n",
+                    event_date, timestamp, name
+                ));
                 result.push_str(description);
                 result.push('\n');
                 result.push('\n');
@@ -53,15 +58,20 @@ impl Entry {
         }
     }
 
-    /// Prints the Entry in a short, one-line format: 'My Title, a long description cut off after this long...'.
+    /// Prints the Entry in a short, one-line format: '<event_date>: My Title, a long description cut off after this long...'.
     /// Description is truncated if too long.
-    pub fn show_short(&self) -> String {
+    pub fn show_short(&self) -> Result<String> {
         match self {
-            Entry::Origin { year } => {
-                format!("----------------{}---------------\n", year)
-            }
+            Entry::Origin { year, .. } => Ok(format!(
+                "----------------{}---------------({})\n",
+                year,
+                self.short_hash()?
+            )),
             Entry::Entry {
-                name, description, ..
+                event_date,
+                name,
+                description,
+                ..
             } => {
                 let max_len = 60;
                 let desc = if description.len() > max_len {
@@ -71,7 +81,13 @@ impl Entry {
                 } else {
                     description.clone()
                 };
-                format!("{}, {}\n", name, desc)
+                Ok(format!(
+                    "{}: {}, {} ({})\n",
+                    event_date,
+                    name,
+                    desc,
+                    self.short_hash()?
+                ))
             }
         }
     }

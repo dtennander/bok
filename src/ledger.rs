@@ -5,6 +5,8 @@ use std::{
     path::PathBuf,
 };
 
+use chrono::{Local, NaiveDate, Utc};
+
 use crate::{Entry, EntryLine};
 
 pub struct Ledger {
@@ -36,7 +38,10 @@ impl Ledger {
         }
         create_dir_all(&location)?;
 
-        let head = Entry::Origin { year: year as u64 };
+        let head = Entry::Origin {
+            timestamp: Utc::now(),
+            year: year as u64,
+        };
         let mut buffer = vec![];
         let hash = head.serialize(&mut buffer)?;
         let head_path = location.join("HEAD");
@@ -80,7 +85,17 @@ impl Ledger {
         description: &str,
         lines: Vec<EntryLine>,
     ) -> Result<EntryHash> {
-        let new_head = Entry::new(name, description, lines, &self.head_hash);
+        self.add_entry_on_date(Local::now().date_naive(), name, description, lines)
+    }
+
+    pub fn add_entry_on_date(
+        &mut self,
+        date: NaiveDate,
+        name: &str,
+        description: &str,
+        lines: Vec<EntryLine>,
+    ) -> Result<EntryHash> {
+        let new_head = Entry::new(date, name, description, lines, &self.head_hash);
         let mut buffer: Vec<u8> = vec![];
         let hash = new_head.serialize(&mut buffer)?;
         let path = self.object_path.join(&hash);
@@ -136,13 +151,13 @@ impl Ledger {
         let mut result = String::new();
 
         while let entry @ Entry::Entry { previous_entry, .. } = self.get_entry(&next_hash)? {
-            result += &entry.show_short();
+            result += &entry.show_short()?;
             let next_ref = previous_entry.clone();
             next_hash = self.from_ref(&next_ref)?;
         }
 
         let last_entry = self.get_entry(&next_hash)?;
-        result += &last_entry.show_short();
+        result += &last_entry.show_short()?;
         Ok(result)
     }
 }

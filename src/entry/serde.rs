@@ -1,5 +1,6 @@
-use std::io::{Result, Write};
+use std::io::{ErrorKind, Result, Write, empty};
 
+use chrono::{DateTime, Datelike, NaiveDate};
 use hex::ToHex;
 use sha2::{Digest, Sha256};
 
@@ -13,43 +14,42 @@ impl Entry {
     /// Returns the hash as the result if successful
     ///
     /// Origin Variant (0x00):
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
-    /// |  0x00  |                      year (8 bytes)                          |
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
+    /// +--------+--------------------------+-------------------------+
+    /// | 0x00   | year (8 bytes)           | timestamp (8 bytes)     |
+    /// +--------+--------------------------+-------------------------+
     ///
     /// Entry Variant (0x01):
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
-    /// |  0x01  |      name_len (4 bytes)        |      desc_len (4 bytes)     |
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
-    /// |                    name data (variable length)                        |
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
-    /// |                 description data (variable length)                    |
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
-    /// |      lines_count (4 bytes)        |                                   |
-    /// +--------+--------+--------+--------+                                   +
-    /// |                    lines data (variable length)                       |
-    /// +                                                                       +
-    /// |                              ...                                      |
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
-    /// |                    previous_entry_id (32 bytes)                       |
-    /// +                                                                       +
-    /// |                              ...                                      |
-    /// +                                                                       +
-    /// |                                                                       |
-    /// +--------+--------+--------+--------+--------+--------+--------+--------+
+    /// +--------+------------+-----------------+----------------+----------------+
+    /// | 0x01   | date (4 B) | timestamp (8 B) | name_len (4 B) | desc_len (4 B) |
+    /// +--------+------------+-----------------+----------------+----------------+
+    /// | name data (variable length)                                             |
+    /// +-------------------------------------------------------------------------+
+    /// | description data (variable length)                                      |
+    /// +-------------------------------------------------------------------------+
+    /// | lines_count (4 B)                                                       |
+    /// +-------------------------------------------------------------------------+
+    /// | lines data (variable length)                                            |
+    /// +-------------------------------------------------------------------------+
+    /// | previous_entry_id (32 B)                                                |
+    /// +-------------------------------------------------------------------------+
     ///
     pub(crate) fn serialize<W: Write>(&self, output: W) -> Result<String> {
         let mut output = TeeWriter::new(output, Sha256::new());
 
         match self {
-            Entry::Origin { year } => {
+            Entry::Origin { timestamp, year } => {
                 // Write discriminant for Origin
                 output.write_all(&[0x00])?;
                 // Write year as 8-byte little-endian
                 output.write_all(&year.to_le_bytes())?;
+                // Write timestamp as 8-byte little-endian
+                let epoch_secs = timestamp.timestamp();
+                output.write_all(&epoch_secs.to_le_bytes())?;
             }
 
             Entry::Entry {
+                timestamp,
+                event_date,
                 name,
                 description,
                 lines,
@@ -57,6 +57,14 @@ impl Entry {
             } => {
                 // Write discriminant for Entry
                 output.write_all(&[0x01])?;
+
+                // Write event_date (as days since epoch, 4 bytes, little endian)
+                let date_days = event_date.num_days_from_ce();
+                output.write_all(&date_days.to_le_bytes())?;
+
+                // Write timestamp (as seconds since epoch, 8 bytes, little endian)
+                let epoch_secs = timestamp.timestamp();
+                output.write_all(&epoch_secs.to_le_bytes())?;
 
                 // Write name length and description length
                 output.write_all(&(name.len() as u32).to_le_bytes())?;
@@ -77,12 +85,16 @@ impl Entry {
                 }
 
                 // Write previous_entry_id (32 bytes) at the end
-                output.write_all(&previous_entry.clone().into_bytes())?;
+                output.write_all(previous_entry.clone().as_bytes())?;
             }
         }
         output.flush()?;
         let (_, hash) = output.into_inner();
         Ok(hash.finalize().encode_hex())
+    }
+
+    pub(super) fn short_hash(&self) -> Result<String> {
+        Ok(self.serialize(empty())?[..6].to_string())
     }
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -99,11 +111,28 @@ impl Entry {
 
         match discriminant {
             0x00 => {
-                // Origin variant: need 8 more bytes for year
+                // Origin variant: need 8 bytes for year and 8 for timestamp
                 read!(year(u64) from bytes[cursor]);
-                Ok(Entry::Origin { year })
+                read!(epoch_secs(i64) from bytes[cursor]);
+                let timestamp = DateTime::from_timestamp(epoch_secs, 0).ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp")
+                })?;
+                Ok(Entry::Origin { year, timestamp })
             }
             0x01 => {
+                // Read event_date (4 bytes, little endian)
+                read!(date_days(i32) from bytes[cursor]);
+                let event_date =
+                    NaiveDate::from_num_days_from_ce_opt(date_days).ok_or_else(|| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid event date")
+                    })?;
+
+                // Read timestamp (8 bytes, little endian)
+                read!(epoch_secs(i64) from bytes[cursor]);
+                let timestamp = DateTime::from_timestamp(epoch_secs, 0).ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp")
+                })?;
+
                 read!(name_len(u32) as usize from bytes[cursor]);
                 read!(desc_len(u32) as usize from bytes[cursor]);
                 read!(name(name_len) as String from bytes[cursor]);
@@ -125,6 +154,8 @@ impl Entry {
                 }
                 read!(previous_entry(32) as String from bytes[cursor]);
                 Ok(Entry::Entry {
+                    timestamp,
+                    event_date,
                     name,
                     description,
                     lines,
@@ -136,5 +167,137 @@ impl Entry {
                 format!("Unknown discriminant: {:#04x}", discriminant),
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Deref;
+
+    use super::*;
+    use crate::Side;
+    use chrono::{NaiveDate, TimeZone, Utc};
+    use quickcheck::{Arbitrary, Gen};
+    use quickcheck_macros::quickcheck;
+
+    // Arbitrary impl for Side
+    impl Arbitrary for EntryLine {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let account = String::arbitrary(g);
+            let amount = usize::arbitrary(g) % 10_000_000;
+            let side = if bool::arbitrary(g) {
+                Side::Debit
+            } else {
+                Side::Credit
+            };
+            let description = if bool::arbitrary(g) {
+                Some(String::arbitrary(g))
+            } else {
+                None
+            };
+            super::EntryLine {
+                account,
+                amount,
+                side,
+                description,
+            }
+        }
+    }
+    impl Arbitrary for Side {
+        fn arbitrary(g: &mut Gen) -> Self {
+            if bool::arbitrary(g) {
+                Side::Debit
+            } else {
+                Side::Credit
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct ArbDateTime(DateTime<Utc>);
+
+    impl Deref for ArbDateTime {
+        type Target = DateTime<Utc>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl Arbitrary for ArbDateTime {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let naive_date =
+                NaiveDate::from_num_days_from_ce_opt((u32::arbitrary(g) % 3652425) as i32)
+                    .unwrap_or_else(|| NaiveDate::from_ymd_opt(2020, 1, 1).unwrap())
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap();
+            ArbDateTime(Utc.from_utc_datetime(&naive_date))
+        }
+    }
+
+    impl Arbitrary for Entry {
+        fn arbitrary(g: &mut Gen) -> Self {
+            if bool::arbitrary(g) {
+                Entry::Origin {
+                    timestamp: *ArbDateTime::arbitrary(g),
+                    year: ArbDateTime::arbitrary(g).year() as u64,
+                }
+            } else {
+                Entry::Entry {
+                    timestamp: *ArbDateTime::arbitrary(g),
+                    event_date: ArbDateTime::arbitrary(g).date_naive(),
+                    name: String::arbitrary(g),
+                    description: String::arbitrary(g),
+                    lines: Vec::<EntryLine>::arbitrary(g),
+                    previous_entry: (0..32)
+                        .map(|_| char::arbitrary(g))
+                        .collect::<String>()
+                        .encode_hex::<String>()[0..32]
+                        .to_string(),
+                }
+            }
+        }
+    }
+
+    #[quickcheck]
+    fn prop_entry_ser_de(entry: Entry) -> Result<bool> {
+        let mut buf = Vec::new();
+        entry.serialize(&mut buf)?;
+        let de = Entry::from_bytes(&buf)?;
+        Ok(entry == de)
+    }
+
+    #[test]
+    fn simple_example() -> Result<()> {
+        let mut g = Gen::new(2);
+        let entry = Entry::Entry {
+            timestamp: *ArbDateTime::arbitrary(&mut g),
+            event_date: ArbDateTime::arbitrary(&mut g).date_naive(),
+            name: "A entry".to_string(),
+            description: "No description".to_string(),
+            lines: vec![
+                EntryLine::arbitrary(&mut g),
+                EntryLine::arbitrary(&mut g),
+                EntryLine::arbitrary(&mut g),
+            ],
+            previous_entry: "123 123 123 123 123 123 123 123 ".to_string(),
+        };
+        let mut buf = vec![];
+        entry.serialize(&mut buf)?;
+        let de = Entry::from_bytes(&buf)?;
+        assert!(entry == de);
+        Ok(())
+    }
+
+    #[quickcheck]
+    fn hash_is_same(entry: Entry) -> Result<bool> {
+        let mut buf = Vec::new();
+        let hash = entry.serialize(&mut buf)?;
+        Ok(hash.starts_with(&entry.short_hash()?))
+    }
+
+    #[quickcheck]
+    fn hash_is_different(a: Entry, b: Entry) -> Result<bool> {
+        Ok(a.short_hash()? != b.short_hash()?)
     }
 }
