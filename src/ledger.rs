@@ -76,11 +76,11 @@ impl Ledger {
 
     pub fn add_entry(
         &mut self,
-        name: impl Into<String>,
-        description: impl Into<String>,
+        name: &str,
+        description: &str,
         lines: Vec<EntryLine>,
     ) -> Result<EntryHash> {
-        let new_head = Entry::create_new(name, description, lines, self.head_hash.clone())?;
+        let new_head = Entry::new(name, description, lines, &self.head_hash);
         let mut buffer: Vec<u8> = vec![];
         let hash = new_head.serialize(&mut buffer)?;
         let path = self.object_path.join(&hash);

@@ -51,7 +51,7 @@ fn main() -> Result<()> {
                 EntryLine::new(&left_str, amount, Side::Debit, Option::<String>::None),
                 EntryLine::new(&right_str, amount, Side::Credit, Option::<String>::None),
             ];
-            let entry_ref = ledger.add_entry("A1", description, lines)?;
+            let entry_ref = ledger.add_entry("A1", &description, lines)?;
             dbg!(ledger.get_entry(&entry_ref)?);
         }
         BokCommand::Show { hash } => {
