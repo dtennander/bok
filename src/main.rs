@@ -18,7 +18,10 @@ enum BokCommand {
         description: String,
     },
     Show {
-        hash: String,
+        entry_ref: String,
+    },
+    Log {
+        start: Option<String>,
     },
     Init {
         year: usize,
@@ -54,11 +57,16 @@ fn main() -> Result<()> {
             let entry_ref = ledger.add_entry("A1", &description, lines)?;
             dbg!(ledger.get_entry(&entry_ref)?);
         }
-        BokCommand::Show { hash } => {
-            let hash = ledger.from_ref(&hash)?;
+        BokCommand::Show { entry_ref } => {
+            let hash = ledger.from_ref(&entry_ref)?;
             let entry = ledger.get_entry(&hash)?;
             let show = entry.show_short();
             print!("{}", show);
+        }
+        BokCommand::Log { start } => {
+            let hash = ledger.from_ref(&start.unwrap_or("HEAD".to_string()))?;
+            let out = ledger.show_log(hash)?;
+            print!("{}", out);
         }
         BokCommand::Init { .. } => {
             panic!("Shouldn't happen!")

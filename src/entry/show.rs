@@ -12,10 +12,10 @@ impl Entry {
     /// account 1     100 |           # Short description.
     /// account 2         |     100   # Second description
     ///
-    pub fn show_short(&self) -> String {
+    pub fn show(&self) -> String {
         match self {
             Entry::Origin { year } => {
-                format!("----------------{}---------------", year)
+                format!("----------------{}---------------\n", year)
             }
             Entry::Entry {
                 name,
@@ -49,6 +49,29 @@ impl Entry {
                 }
 
                 result
+            }
+        }
+    }
+
+    /// Prints the Entry in a short, one-line format: 'My Title, a long description cut off after this long...'.
+    /// Description is truncated if too long.
+    pub fn show_short(&self) -> String {
+        match self {
+            Entry::Origin { year } => {
+                format!("----------------{}---------------\n", year)
+            }
+            Entry::Entry {
+                name, description, ..
+            } => {
+                let max_len = 60;
+                let desc = if description.len() > max_len {
+                    let mut d = description.chars().take(max_len).collect::<String>();
+                    d.push_str("...");
+                    d
+                } else {
+                    description.clone()
+                };
+                format!("{}, {}\n", name, desc)
             }
         }
     }

@@ -130,4 +130,19 @@ impl Ledger {
             HashEntry::Occupied(o) => Ok(o.into_mut()),
         }
     }
+
+    pub fn show_log(&mut self, hash: EntryHash) -> Result<String> {
+        let mut next_hash = hash;
+        let mut result = String::new();
+
+        while let entry @ Entry::Entry { previous_entry, .. } = self.get_entry(&next_hash)? {
+            result += &entry.show_short();
+            let next_ref = previous_entry.clone();
+            next_hash = self.from_ref(&next_ref)?;
+        }
+
+        let last_entry = self.get_entry(&next_hash)?;
+        result += &last_entry.show_short();
+        Ok(result)
+    }
 }
