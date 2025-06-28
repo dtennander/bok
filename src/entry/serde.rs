@@ -3,7 +3,9 @@ use std::io::{Result, Write};
 use hex::ToHex;
 use sha2::{Digest, Sha256};
 
-use crate::{Entry, EntryLine, read::read, tee_writer::TeeWriter};
+use super::{Entry, EntryLine};
+use crate::read::read;
+use crate::tee_writer::TeeWriter;
 
 impl Entry {
     /// Serialize an entry into binary form

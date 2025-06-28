@@ -1,4 +1,4 @@
-use crate::{Entry, Side};
+use super::{Entry, Side};
 
 impl Entry {
     /// Prints the Entry in a short format, often used in log.
