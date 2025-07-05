@@ -18,7 +18,7 @@ pub struct Ledger {
     hash_map: HashMap<String, Entry>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EntryHash(String);
 
 impl AsRef<str> for EntryHash {

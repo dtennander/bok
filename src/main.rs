@@ -1,4 +1,8 @@
-use std::{env::current_dir, io::Result, path::PathBuf};
+use std::{
+    env::current_dir,
+    io::{Result, empty},
+    path::PathBuf,
+};
 
 use bok::{EntryLine, Ledger, Side};
 use clap::{Parser, Subcommand};
@@ -55,7 +59,8 @@ fn main() -> Result<()> {
                 EntryLine::new(&right_str, amount, Side::Credit, Option::<String>::None),
             ];
             let entry_ref = ledger.add_entry("A1", &description, lines)?;
-            dbg!(ledger.get_entry(&entry_ref)?);
+            let entry = ledger.get_entry(&entry_ref)?;
+            println!("{}", entry.show());
         }
         BokCommand::Show { entry_ref } => {
             let hash = ledger.from_ref(&entry_ref)?;
