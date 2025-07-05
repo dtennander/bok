@@ -16,7 +16,12 @@ impl Entry {
     pub fn show(&self) -> String {
         match self {
             Entry::Origin { timestamp, year } => {
-                format!("{}, Origin of {}\n", timestamp, year)
+                format!(
+                    "({}) {}, Origin of {}\n",
+                    self.short_hash().unwrap_or("FAIL".to_string()),
+                    timestamp,
+                    year
+                )
             }
             Entry::Entry {
                 event_date,
@@ -28,8 +33,11 @@ impl Entry {
             } => {
                 let mut result = String::new();
                 result.push_str(&format!(
-                    "{} (recorded: {}): {}\n",
-                    event_date, timestamp, name
+                    "({}) {} (recorded: {}): {}\n",
+                    self.short_hash().unwrap_or("FAIL".to_string()),
+                    event_date,
+                    timestamp,
+                    name
                 ));
                 result.push_str(description);
                 result.push('\n');

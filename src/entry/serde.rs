@@ -1,4 +1,4 @@
-use std::io::{ErrorKind, Result, Write, empty};
+use std::io::{Result, Write, empty};
 
 use chrono::{DateTime, Datelike, NaiveDate};
 use hex::ToHex;
@@ -58,7 +58,7 @@ impl Entry {
                 // Write discriminant for Entry
                 output.write_all(&[0x01])?;
 
-                // Write event_date (as days since epoch, 4 bytes, little endian)
+                // Write event_date (as days since year 0, 4 bytes, little endian)
                 let date_days = event_date.num_days_from_ce();
                 output.write_all(&date_days.to_le_bytes())?;
 
@@ -84,7 +84,7 @@ impl Entry {
                     line.serialize(&mut output)?;
                 }
 
-                // Write previous_entry_id (32 bytes) at the end
+                // Write previous_entry_id (64 bytes) at the end
                 output.write_all(previous_entry.clone().as_bytes())?;
             }
         }
@@ -152,7 +152,7 @@ impl Entry {
                     cursor += consumed;
                     lines.push(line);
                 }
-                read!(previous_entry(32) as String from bytes[cursor]);
+                read!(previous_entry(64) as String from bytes[cursor]);
                 Ok(Entry::Entry {
                     timestamp,
                     event_date,
@@ -172,7 +172,7 @@ impl Entry {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
+    use std::{env, fs::write, ops::Deref};
 
     use super::*;
     use crate::Side;
@@ -294,6 +294,36 @@ mod tests {
         let mut buf = Vec::new();
         let hash = entry.serialize(&mut buf)?;
         Ok(hash.starts_with(&entry.short_hash()?))
+    }
+
+    #[quickcheck]
+    fn hash_is_same_multiple_times(a: Entry) -> Result<bool> {
+        let hash = a.serialize(empty())?;
+        let hash_2 = a.serialize(empty())?;
+        Ok(hash == hash_2)
+    }
+
+    #[quickcheck]
+    fn hash_is_same_multiple_times_different_buffer(a: Entry) -> Result<bool> {
+        let buffer = vec![];
+        let hash = a.serialize(buffer)?;
+        let hash_2 = a.serialize(empty())?;
+        Ok(hash == hash_2)
+    }
+
+    #[quickcheck]
+    fn hash_consistent_on_disk(entry: Entry) -> Result<bool> {
+        let dir = env::temp_dir();
+
+        let mut buffer = vec![];
+        let hash_1 = entry.serialize(&mut buffer)?;
+
+        let file = dir.join(&hash_1);
+        write(&file, &buffer)?;
+
+        let new_entry = Entry::from_file(&file)?;
+        let hash_2 = new_entry.short_hash()?;
+        Ok(hash_1.starts_with(&hash_2))
     }
 
     #[quickcheck]

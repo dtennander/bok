@@ -1,8 +1,4 @@
-use std::{
-    env::current_dir,
-    io::{Result, empty},
-    path::PathBuf,
-};
+use std::{env::current_dir, io::Result, path::PathBuf};
 
 use bok::{EntryLine, Ledger, Side};
 use clap::{Parser, Subcommand};
