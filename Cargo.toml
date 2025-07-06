@@ -2,6 +2,14 @@
 name = "bok"
 version = "0.1.0"
 edition = "2024"
+description = "A git-inspired command-line tool for local accounting."
+license = "MIT"
+repository = "https://github.com/dtennander/bok"
+homepage = "https://github.com/dtennander/bok"
+documentation = "https://docs.rs/bok"
+readme = "README.md"
+keywords = ["ledger", "finance", "cli", "accounting"]
+categories = ["command-line-utilities", "finance"]
 
 [dependencies]
 chrono = "0.4.41"
