@@ -1,4 +1,4 @@
-use std::io::{BufReader, Read, Result, Seek, Write, empty};
+use std::io::{Read, Result, Seek, Write, empty};
 
 use chrono::{DateTime, Datelike, NaiveDate};
 use flate2::Compression;
