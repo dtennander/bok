@@ -11,22 +11,23 @@ struct BokArgs {
 
 #[derive(Subcommand)]
 enum BokCommand {
+    /// Record a item in the Ledger.
+    #[command(name = "record", visible_alias = "rec")]
     Rec {
-        left: u16,
-        right: u16,
+        debit: u16,
+        credit: u16,
         amount: usize,
         description: String,
     },
-    Show {
-        entry_ref: String,
-    },
-    Log {
-        start: Option<String>,
-    },
-    Init {
-        year: usize,
-        dir: Option<PathBuf>,
-    },
+    /// Show a entry using it's REF.
+    ///
+    /// A REF can be either the sha of that entry or a symbol reference pointing to a entry, i.e.
+    /// HEAD.
+    Show { r#ref: String },
+    /// Show the history from a given REF.
+    Log { r#ref: Option<String> },
+    /// Initialize a book from a new year.
+    Init { year: usize, dir: Option<PathBuf> },
 }
 
 fn main() -> Result<()> {
@@ -43,8 +44,8 @@ fn main() -> Result<()> {
     let mut ledger = Ledger::from_dir(default_path)?;
     match args.command {
         BokCommand::Rec {
-            left,
-            right,
+            debit: left,
+            credit: right,
             amount,
             description,
         } => {
@@ -58,13 +59,13 @@ fn main() -> Result<()> {
             let entry = ledger.get_entry(&entry_ref)?;
             println!("{}", entry.show());
         }
-        BokCommand::Show { entry_ref } => {
+        BokCommand::Show { r#ref: entry_ref } => {
             let hash = ledger.from_ref(&entry_ref)?;
             let entry = ledger.get_entry(&hash)?;
             let show = entry.show();
             print!("{}", show);
         }
-        BokCommand::Log { start } => {
+        BokCommand::Log { r#ref: start } => {
             let hash = ledger.from_ref(&start.unwrap_or("HEAD".to_string()))?;
             let out = ledger.show_log(hash)?;
             print!("{}", out);
