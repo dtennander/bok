@@ -1,12 +1,15 @@
-use std::io::{Read, Result, Seek, Write, empty};
+use std::io::{BufReader, Read, Result, Seek, Write, empty};
 
 use chrono::{DateTime, Datelike, NaiveDate};
+use flate2::Compression;
+use flate2::read::GzDecoder;
 use hex::ToHex;
 use sha2::{Digest, Sha256};
 
 use super::{Entry, EntryLine};
 use crate::read::read;
 use crate::tee_writer::TeeWriter;
+use flate2::write::GzEncoder;
 
 impl Entry {
     /// Serialize an entry into binary form
@@ -34,7 +37,8 @@ impl Entry {
     /// +-------------------------------------------------------------------------+
     ///
     pub(crate) fn serialize<W: Write + Seek>(&self, output: W) -> Result<String> {
-        let mut output = TeeWriter::new(output, Sha256::new());
+        let zipper = GzEncoder::new(output, Compression::default());
+        let mut output = TeeWriter::new(zipper, Sha256::new());
 
         match self {
             Entry::Origin { timestamp, year } => {
@@ -97,16 +101,20 @@ impl Entry {
         Ok(self.serialize(empty())?[..6].to_string())
     }
 
-    pub(crate) fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
-        let mut buffer: [u8; 8] = [0x00; 8];
+    pub(crate) fn deserialize<R: Read + Seek>(mut reader: R) -> Result<Self> {
+        let mut reader: Box<dyn Read> = {
+            let gzipper = GzDecoder::new(&mut reader);
+            match gzipper.header() {
+                None => {
+                    reader.seek(std::io::SeekFrom::Start(0))?;
+                    Box::new(reader)
+                }
+                Some(_) => Box::new(gzipper),
+            }
+        };
+        let buffer: [u8; 8] = [0x00; 8];
         // Read discriminant
-        reader.read_exact(&mut buffer[..1]).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Failed to read discriminant",
-            )
-        })?;
-        let discriminant = buffer[0];
+        read!(discriminant(u8) from reader using buffer);
         match discriminant {
             0x00 => {
                 // Origin variant: need 8 bytes for year and 8 for timestamp
@@ -140,7 +148,7 @@ impl Entry {
                 // Read lines
                 let mut lines = Vec::new();
                 for _ in 0..lines_count {
-                    let line = EntryLine::deserialize(reader)?;
+                    let line = EntryLine::deserialize(&mut reader)?;
                     lines.push(line);
                 }
                 read!(previous_entry(64) as String from reader);

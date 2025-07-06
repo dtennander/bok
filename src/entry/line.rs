@@ -75,17 +75,10 @@ impl EntryLine {
     }
 
     pub(crate) fn deserialize<R: Read>(reader: &mut R) -> std::io::Result<Self> {
-        let mut buffer: [u8; 8] = [0; 8];
+        let buffer: [u8; 8] = [0; 8];
         read!(account_len(u32) as usize from reader using buffer);
         read!(amount(u64) as usize from reader using buffer);
-        // Read side (1 byte)
-        reader.read_exact(&mut buffer[..1]).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to read {}", stringify!($field_name)),
-            )
-        })?;
-        let side_byte = buffer[0];
+        read!(side_byte(u8) from reader using buffer);
         let side = match side_byte {
             0x00 => Side::Credit,
             0x01 => Side::Debit,
@@ -96,14 +89,7 @@ impl EntryLine {
                 ));
             }
         };
-        // Read description flag (1 byte)
-        reader.read_exact(&mut buffer[..1]).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to read {}", stringify!($field_name)),
-            )
-        })?;
-        let desc_flag = buffer[0];
+        read!(desc_flag(u8) from reader using buffer);
         let has_description = match desc_flag {
             0x00 => false,
             0x01 => true,
