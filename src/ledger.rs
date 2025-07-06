@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, hash_map::Entry as HashEntry},
     fs::{self, create_dir_all, read, write},
-    io::{Error, ErrorKind, Result},
+    io::{Cursor, Error, ErrorKind, Result},
     path::PathBuf,
 };
 
@@ -42,13 +42,13 @@ impl Ledger {
             timestamp: Utc::now(),
             year: year as u64,
         };
-        let mut buffer = vec![];
+        let mut buffer = Cursor::new(vec![]);
         let hash = head.serialize(&mut buffer)?;
         let head_path = location.join("HEAD");
         write(&head_path, &hash)?;
         let object_path = location.join("objects");
         create_dir_all(&object_path)?;
-        write(object_path.join(&hash), buffer)?;
+        write(object_path.join(&hash), buffer.into_inner())?;
         Ok(Self {
             head,
             head_hash: hash,
@@ -96,11 +96,11 @@ impl Ledger {
         lines: Vec<EntryLine>,
     ) -> Result<EntryHash> {
         let new_head = Entry::new(date, name, description, lines, &self.head_hash);
-        let mut buffer: Vec<u8> = vec![];
+        let mut buffer = Cursor::new(vec![]);
         let hash = new_head.serialize(&mut buffer)?;
         let path = self.object_path.join(&hash);
         create_dir_all(&self.object_path)?;
-        write(path, buffer)?;
+        write(path, buffer.into_inner())?;
         write(&self.head_path, &hash)?;
         self.head_hash = hash;
         self.head = new_head;

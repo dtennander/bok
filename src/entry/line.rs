@@ -1,5 +1,5 @@
 use crate::read::read;
-use std::io::{Result, Write};
+use std::io::{Read, Result, Write};
 
 /// Journal EntryLine used for accounting
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,20 +74,18 @@ impl EntryLine {
         Ok(())
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8]) -> std::io::Result<(Self, usize)> {
-        let mut cursor = 0;
-
-        // Need at least 14 bytes for the fixed fields (account_len + amount + side + d_flag)
-        if bytes.len() < 14 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "Insufficient bytes for EntryLine header",
-            ));
-        }
-        read!(account_len(u32) as usize from bytes[cursor]);
-        read!(amount(u64) as usize from bytes[cursor]);
+    pub(crate) fn deserialize<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buffer: [u8; 8] = [0; 8];
+        read!(account_len(u32) as usize from reader using buffer);
+        read!(amount(u64) as usize from reader using buffer);
         // Read side (1 byte)
-        let side_byte = bytes[cursor];
+        reader.read_exact(&mut buffer[..1]).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to read {}", stringify!($field_name)),
+            )
+        })?;
+        let side_byte = buffer[0];
         let side = match side_byte {
             0x00 => Side::Credit,
             0x01 => Side::Debit,
@@ -98,10 +96,14 @@ impl EntryLine {
                 ));
             }
         };
-        cursor += 1;
-
         // Read description flag (1 byte)
-        let desc_flag = bytes[cursor];
+        reader.read_exact(&mut buffer[..1]).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to read {}", stringify!($field_name)),
+            )
+        })?;
+        let desc_flag = buffer[0];
         let has_description = match desc_flag {
             0x00 => false,
             0x01 => true,
@@ -112,26 +114,23 @@ impl EntryLine {
                 ));
             }
         };
-        cursor += 1;
 
-        read!(account(account_len) as String from bytes[cursor]);
+        read!(account(account_len) as String from reader);
 
         // Read description if present
         let description = if has_description {
-            read!(desc_len(u32) as usize from bytes[cursor]);
-            read!(desc(desc_len) as String from bytes[cursor]);
+            read!(desc_len(u32) as usize from reader using buffer);
+            read!(desc(desc_len) as String from reader);
             Some(desc)
         } else {
             None
         };
 
-        let entry_line = EntryLine {
+        Ok(EntryLine {
             account,
             amount,
             side,
             description,
-        };
-
-        Ok((entry_line, cursor))
+        })
     }
 }

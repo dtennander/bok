@@ -1,4 +1,4 @@
-use std::io::{Result, Write, empty};
+use std::io::{Read, Result, Seek, Write, empty};
 
 use chrono::{DateTime, Datelike, NaiveDate};
 use hex::ToHex;
@@ -33,7 +33,7 @@ impl Entry {
     /// | previous_entry_id (32 B)                                                |
     /// +-------------------------------------------------------------------------+
     ///
-    pub(crate) fn serialize<W: Write>(&self, output: W) -> Result<String> {
+    pub(crate) fn serialize<W: Write + Seek>(&self, output: W) -> Result<String> {
         let mut output = TeeWriter::new(output, Sha256::new());
 
         match self {
@@ -97,23 +97,21 @@ impl Entry {
         Ok(self.serialize(empty())?[..6].to_string())
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.is_empty() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Empty byte array",
-            ));
-        }
-        let mut cursor = 0;
+    pub(crate) fn deserialize<R: Read>(reader: &mut R) -> Result<Self> {
+        let mut buffer: [u8; 8] = [0x00; 8];
         // Read discriminant
-        let discriminant = bytes[0];
-        cursor += 1;
-
+        reader.read_exact(&mut buffer[..1]).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Failed to read discriminant",
+            )
+        })?;
+        let discriminant = buffer[0];
         match discriminant {
             0x00 => {
                 // Origin variant: need 8 bytes for year and 8 for timestamp
-                read!(year(u64) from bytes[cursor]);
-                read!(epoch_secs(i64) from bytes[cursor]);
+                read!(year(u64) from reader using buffer);
+                read!(epoch_secs(i64) from reader using buffer);
                 let timestamp = DateTime::from_timestamp(epoch_secs, 0).ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp")
                 })?;
@@ -121,38 +119,31 @@ impl Entry {
             }
             0x01 => {
                 // Read event_date (4 bytes, little endian)
-                read!(date_days(i32) from bytes[cursor]);
+                read!(date_days(i32) from reader using buffer);
                 let event_date =
                     NaiveDate::from_num_days_from_ce_opt(date_days).ok_or_else(|| {
                         std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid event date")
                     })?;
 
                 // Read timestamp (8 bytes, little endian)
-                read!(epoch_secs(i64) from bytes[cursor]);
+                read!(epoch_secs(i64) from reader using buffer);
                 let timestamp = DateTime::from_timestamp(epoch_secs, 0).ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp")
                 })?;
 
-                read!(name_len(u32) as usize from bytes[cursor]);
-                read!(desc_len(u32) as usize from bytes[cursor]);
-                read!(name(name_len) as String from bytes[cursor]);
-                read!(description(desc_len) as String from bytes[cursor]);
-                read!(lines_count(u32) from bytes[cursor]);
+                read!(name_len(u32) as usize from reader using buffer);
+                read!(desc_len(u32) as usize from reader using buffer);
+                read!(name(name_len) as String from reader);
+                read!(description(desc_len) as String from reader);
+                read!(lines_count(u32) from reader using buffer);
 
                 // Read lines
                 let mut lines = Vec::new();
-                for i in 0..lines_count {
-                    let (line, consumed) =
-                        EntryLine::from_bytes(&bytes[cursor..]).map_err(|e| {
-                            std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("Failed to deserialize line {}: {}", i, e),
-                            )
-                        })?;
-                    cursor += consumed;
+                for _ in 0..lines_count {
+                    let line = EntryLine::deserialize(reader)?;
                     lines.push(line);
                 }
-                read!(previous_entry(64) as String from bytes[cursor]);
+                read!(previous_entry(64) as String from reader);
                 Ok(Entry::Entry {
                     timestamp,
                     event_date,
@@ -172,7 +163,7 @@ impl Entry {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs::write, ops::Deref};
+    use std::{env, fs::File, io::Cursor, ops::Deref};
 
     use super::*;
     use crate::Side;
@@ -249,10 +240,10 @@ mod tests {
                     name: String::arbitrary(g),
                     description: String::arbitrary(g),
                     lines: Vec::<EntryLine>::arbitrary(g),
-                    previous_entry: (0..32)
+                    previous_entry: (0..64)
                         .map(|_| char::arbitrary(g))
                         .collect::<String>()
-                        .encode_hex::<String>()[0..32]
+                        .encode_hex::<String>()[0..64]
                         .to_string(),
                 }
             }
@@ -261,9 +252,11 @@ mod tests {
 
     #[quickcheck]
     fn prop_entry_ser_de(entry: Entry) -> Result<bool> {
-        let mut buf = Vec::new();
+        let mut buf = Cursor::new(Vec::new());
         entry.serialize(&mut buf)?;
-        let de = Entry::from_bytes(&buf)?;
+        buf.set_position(0);
+        dbg!(&buf);
+        let de = Entry::deserialize(&mut buf)?;
         Ok(entry == de)
     }
 
@@ -280,18 +273,20 @@ mod tests {
                 EntryLine::arbitrary(&mut g),
                 EntryLine::arbitrary(&mut g),
             ],
-            previous_entry: "123 123 123 123 123 123 123 123 ".to_string(),
+            previous_entry: "4f3e78b77d3a9bb2c1d305f4d536d4da2cd56adb2820af5b94ad3f9da0576b11"
+                .to_string(),
         };
-        let mut buf = vec![];
+        let mut buf = Cursor::new(Vec::new());
         entry.serialize(&mut buf)?;
-        let de = Entry::from_bytes(&buf)?;
+        buf.set_position(0);
+        let de = Entry::deserialize(&mut buf)?;
         assert!(entry == de);
         Ok(())
     }
 
     #[quickcheck]
     fn hash_is_same(entry: Entry) -> Result<bool> {
-        let mut buf = Vec::new();
+        let mut buf = Cursor::new(Vec::new());
         let hash = entry.serialize(&mut buf)?;
         Ok(hash.starts_with(&entry.short_hash()?))
     }
@@ -305,8 +300,8 @@ mod tests {
 
     #[quickcheck]
     fn hash_is_same_multiple_times_different_buffer(a: Entry) -> Result<bool> {
-        let buffer = vec![];
-        let hash = a.serialize(buffer)?;
+        let buf = Cursor::new(Vec::new());
+        let hash = a.serialize(buf)?;
         let hash_2 = a.serialize(empty())?;
         Ok(hash == hash_2)
     }
@@ -314,14 +309,12 @@ mod tests {
     #[quickcheck]
     fn hash_consistent_on_disk(entry: Entry) -> Result<bool> {
         let dir = env::temp_dir();
-
-        let mut buffer = vec![];
-        let hash_1 = entry.serialize(&mut buffer)?;
-
-        let file = dir.join(&hash_1);
-        write(&file, &buffer)?;
-
-        let new_entry = Entry::from_file(&file)?;
+        let path = dir.join("temp_hash");
+        dbg!(&path);
+        let mut file = File::create(&path)?;
+        let hash_1 = entry.serialize(&mut file)?;
+        drop(file);
+        let new_entry = Entry::from_file(&path)?;
         let hash_2 = new_entry.short_hash()?;
         Ok(hash_1.starts_with(&hash_2))
     }

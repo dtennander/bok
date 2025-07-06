@@ -1,8 +1,8 @@
-use std::fs::read;
+use std::fs::File;
 use std::io::Result;
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Timelike, Utc};
 
 use super::EntryLine;
 
@@ -33,7 +33,7 @@ impl Entry {
         previous_entry: &str,
     ) -> Self {
         Entry::Entry {
-            timestamp: chrono::Utc::now(),
+            timestamp: chrono::Utc::now().with_nanosecond(0).unwrap(),
             event_date: date,
             name: name.to_string(),
             description: description.to_string(),
@@ -43,7 +43,7 @@ impl Entry {
     }
 
     pub fn from_file(path: &Path) -> Result<Self> {
-        let bytes = read(path)?;
-        Self::from_bytes(&bytes)
+        let mut file = File::open(path)?;
+        Self::deserialize(&mut file)
     }
 }
