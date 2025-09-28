@@ -1,3 +1,4 @@
+mod chart_of_accounts;
 mod entry;
 mod ledger;
 #[macro_use]
