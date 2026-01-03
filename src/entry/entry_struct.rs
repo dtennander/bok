@@ -4,6 +4,8 @@ use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, Timelike, Utc};
 
+use crate::chart_of_accounts::ChartOfAccount;
+
 use super::EntryLine;
 
 /// Entry in the General Ledger.
@@ -19,6 +21,7 @@ pub enum Entry {
     },
     Origin {
         timestamp: DateTime<Utc>,
+        chart: ChartOfAccount,
         year: u64,
     },
 }

@@ -3,6 +3,7 @@ use crate::Side;
 mod bas;
 pub type ChartOfAccount = Vec<Account>;
 
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Account {
     account_number: usize,
     name: String,
@@ -10,7 +11,7 @@ pub struct Account {
     account_type: AccountType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccountType {
     Asset,
     Liability,

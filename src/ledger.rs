@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{Local, NaiveDate, Utc};
 
-use crate::{Entry, EntryLine};
+use crate::{Entry, EntryLine, chart_of_accounts::ChartOfAccount};
 
 pub struct Ledger {
     head: Entry,
@@ -29,7 +29,7 @@ impl AsRef<str> for EntryHash {
 }
 
 impl Ledger {
-    pub fn init(year: usize, location: PathBuf) -> Result<Self> {
+    pub fn init(year: usize, location: PathBuf, chart: ChartOfAccount) -> Result<Self> {
         if location.is_dir() {
             return Err(Error::new(
                 ErrorKind::DirectoryNotEmpty,
@@ -41,6 +41,7 @@ impl Ledger {
         let head = Entry::Origin {
             timestamp: Utc::now(),
             year: year as u64,
+            chart,
         };
         let mut buffer = Cursor::new(vec![]);
         let hash = head.serialize(&mut buffer)?;
