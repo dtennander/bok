@@ -1,6 +1,6 @@
 use crate::Side;
 
-mod bas;
+pub mod bas;
 pub type ChartOfAccount = Vec<Account>;
 
 #[derive(PartialEq, Eq, Clone, Debug)]

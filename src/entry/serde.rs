@@ -41,7 +41,11 @@ impl Entry {
         let mut output = TeeWriter::new(zipper, Sha256::new());
 
         match self {
-            Entry::Origin { timestamp, year } => {
+            Entry::Origin {
+                timestamp,
+                year,
+                chart,
+            } => {
                 // Write discriminant for Origin
                 output.write_all(&[0x00])?;
                 // Write year as 8-byte little-endian
@@ -123,7 +127,11 @@ impl Entry {
                 let timestamp = DateTime::from_timestamp(epoch_secs, 0).ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp")
                 })?;
-                Ok(Entry::Origin { year, timestamp })
+                Ok(Entry::Origin {
+                    year,
+                    timestamp,
+                    chart: vec![],
+                })
             }
             0x01 => {
                 // Read event_date (4 bytes, little endian)
@@ -240,6 +248,7 @@ mod tests {
                 Entry::Origin {
                     timestamp: *ArbDateTime::arbitrary(g),
                     year: ArbDateTime::arbitrary(g).year() as u64,
+                    chart: vec![],
                 }
             } else {
                 Entry::Entry {

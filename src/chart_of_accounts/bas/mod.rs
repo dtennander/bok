@@ -1,6 +1,10 @@
-use crate::chart_of_accounts::ChartOfAccount;
+use std::io::Cursor;
+
+use crate::chart_of_accounts::{ChartOfAccount, bas::parsing::load_bas_worksheet};
+use crate::error::{BokError, Result};
 
 use super::AccountType;
+mod parsing;
 
 #[derive(PartialEq, Eq)]
 enum BasYear {
@@ -41,20 +45,23 @@ fn bas_download_link(year: BasYear, language: BasLanguange) -> &'static str {
     unsafe { link.unwrap_unchecked() }
 }
 
-fn bas_class_to_type(class: u8) -> Result<AccountType, String> {
+fn bas_class_to_type(class: u8) -> Result<AccountType> {
     match class {
         1 => Ok(AccountType::Asset),
         2 => Ok(AccountType::Liability),
         3 => Ok(AccountType::Revenue),
         4..=8 => Ok(AccountType::Expense),
-        _ => Err(format!("Invalid BAS class: {}", class)),
+        _ => Err(BokError::InvalidBasClass(class)),
     }
 }
 
-struct BasClient {}
-
-impl BasClient {
-    fn get_current_plan() -> Result<ChartOfAccount, String> {
-        Ok(vec![])
-    }
+pub fn get_bas_plan() -> Result<ChartOfAccount> {
+    let link = bas_download_link(BasYear::Y2025, BasLanguange::SV);
+    println!("Will download chart from {link}");
+    let response = reqwest::blocking::get(link)?;
+    let bytes = response.bytes()?;
+    let accs = load_bas_worksheet(Cursor::new(bytes))?;
+    accs.iter().for_each(|a| println!("Got account {}", a.name));
+    println!("Got chart with {} accounts", accs.iter().len());
+    Ok(accs)
 }

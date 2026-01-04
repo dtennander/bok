@@ -15,7 +15,11 @@ impl Entry {
     /// ```
     pub fn show(&self) -> String {
         match self {
-            Entry::Origin { timestamp, year } => {
+            Entry::Origin {
+                timestamp,
+                year,
+                chart,
+            } => {
                 format!(
                     "({}) {}, Origin of {}\n",
                     self.short_hash().unwrap_or("FAIL".to_string()),

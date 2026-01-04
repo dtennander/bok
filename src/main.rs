@@ -1,5 +1,7 @@
-use std::{env::current_dir, io::Result, path::PathBuf};
+use std::{env::current_dir, path::PathBuf};
 
+use anyhow::{Context, Result};
+use bok::chart_of_accounts::bas::get_bas_plan;
 use bok::{EntryLine, Ledger, Side};
 use clap::{Parser, Subcommand};
 
@@ -36,7 +38,8 @@ fn main() -> Result<()> {
     let default_path = current_dir()?.join(".bok");
 
     if let BokCommand::Init { year, dir } = args.command {
-        Ledger::init(year, dir.unwrap_or(default_path))?;
+        let accs = get_bas_plan().context("Failed to get BAS plan")?;
+        Ledger::init(year, dir.unwrap_or(default_path), accs)?;
         println!("Ledger initialized");
         return Ok(());
     }
