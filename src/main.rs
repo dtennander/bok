@@ -1,7 +1,7 @@
 use std::{env::current_dir, path::PathBuf};
 
 use anyhow::{Context, Result};
-use bok::chart_of_accounts::bas::get_bas_plan;
+use bok::chart_of_accounts::bas::{BasLanguange, BasYear, get_bas_plan};
 use bok::{EntryLine, Ledger, Side};
 use clap::{Parser, Subcommand};
 
@@ -29,7 +29,13 @@ enum BokCommand {
     /// Show the history from a given REF.
     Log { r#ref: Option<String> },
     /// Initialize a book from a new year.
-    Init { year: usize, dir: Option<PathBuf> },
+    Init {
+        year: usize,
+        #[clap(long, short, default_value = ".bok")]
+        directory: Option<PathBuf>,
+        #[clap(long, short, default_value = "en")]
+        language: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -37,9 +43,25 @@ fn main() -> Result<()> {
 
     let default_path = current_dir()?.join(".bok");
 
-    if let BokCommand::Init { year, dir } = args.command {
-        let accs = get_bas_plan().context("Failed to get BAS plan")?;
-        Ledger::init(year, dir.unwrap_or(default_path), accs)?;
+    if let BokCommand::Init {
+        year,
+        directory,
+        language,
+    } = args.command
+    {
+        let year = (match year {
+            2025 => Some(BasYear::Y2025),
+            _ => None,
+        })
+        .context("No Chart of account for the given year")?;
+        let language = (match language.as_str() {
+            "sv" => Some(BasLanguange::SV),
+            "en" => Some(BasLanguange::EN),
+            _ => None,
+        })
+        .context("No Chart of account for the given language")?;
+        let accs = get_bas_plan(year, language).context("Failed to get BAS plan")?;
+        Ledger::init(year as usize, directory.unwrap_or(default_path), accs)?;
         println!("Ledger initialized");
         return Ok(());
     }

@@ -43,7 +43,6 @@ struct BasRowData {
 /// Attempts to parse a single row into BasRowData
 fn parse_bas_row(row: &[Data]) -> Option<BasRowData> {
     let account_number = extract_account_number(row)?;
-
     let description = row.get(COLUMN_DESCRIPTION).and_then(parse_description)?;
 
     // Skip empty descriptions

@@ -6,13 +6,13 @@ use crate::error::{BokError, Result};
 use super::AccountType;
 mod parsing;
 
-#[derive(PartialEq, Eq)]
-enum BasYear {
-    Y2025,
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BasYear {
+    Y2025 = 2025,
 }
 
-#[derive(PartialEq, Eq)]
-enum BasLanguange {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BasLanguange {
     SV,
     EN,
 }
@@ -55,13 +55,12 @@ fn bas_class_to_type(class: u8) -> Result<AccountType> {
     }
 }
 
-pub fn get_bas_plan() -> Result<ChartOfAccount> {
-    let link = bas_download_link(BasYear::Y2025, BasLanguange::SV);
+pub fn get_bas_plan(year: BasYear, language: BasLanguange) -> Result<ChartOfAccount> {
+    let link = bas_download_link(year, language);
     println!("Will download chart from {link}");
     let response = reqwest::blocking::get(link)?;
     let bytes = response.bytes()?;
     let accs = load_bas_worksheet(Cursor::new(bytes))?;
-    accs.iter().for_each(|a| println!("Got account {}", a.name));
     println!("Got chart with {} accounts", accs.iter().len());
     Ok(accs)
 }
