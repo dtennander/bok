@@ -1,6 +1,6 @@
 [package]
 name = "bok"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A git-inspired command-line tool for local accounting."
 license = "MIT"
@@ -12,7 +12,7 @@ keywords = ["ledger", "finance", "cli", "accounting"]
 categories = ["command-line-utilities", "finance"]
 
 [dependencies]
-calamine = "0.26.0"
+calamine = "0.32.0"
 chrono = "0.4.41"
 clap = { version = "4.5.40", features = ["derive"] }
 clap_complete = "4.5"
