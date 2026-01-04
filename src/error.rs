@@ -16,6 +16,22 @@ pub enum BokError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    /// Bad Ledger directory
+    #[error("Bad ledger")]
+    BadLedger,
+
+    /// Initialization Error
+    #[error("Initialization Error")]
+    Initialization,
+
+    /// Ref not found
+    #[error("Ref not found")]
+    RefNotFound,
+
+    /// Ref not found
+    #[error("Found to many matches")]
+    ToManyMatches,
+
     /// Invalid account class in BAS system
     #[error("Invalid BAS account class: {0}")]
     InvalidBasClass(u8),

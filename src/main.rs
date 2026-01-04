@@ -1,11 +1,52 @@
-use std::{env::current_dir, path::PathBuf};
+use std::{env::current_dir, io, path::PathBuf};
 
 use anyhow::{Context, Result};
 use bok::chart_of_accounts::bas::{BasLanguange, BasYear, get_bas_plan};
 use bok::{EntryLine, Ledger, Side};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::{Generator, Shell, generate};
+
+use crate::completions::{
+    bash_dynamic_completions, fish_dynamic_completions, zsh_dynamic_completions,
+};
+mod completions;
+
+/// Supported languages for the chart of accounts
+#[derive(Clone, Copy, ValueEnum)]
+enum Language {
+    /// English
+    En,
+    /// Swedish
+    Sv,
+}
+
+impl From<Language> for BasLanguange {
+    fn from(lang: Language) -> Self {
+        match lang {
+            Language::En => BasLanguange::EN,
+            Language::Sv => BasLanguange::SV,
+        }
+    }
+}
+
+/// Supported years for the chart of accounts
+#[derive(Clone, Copy, ValueEnum)]
+enum SupportedYear {
+    /// Year 2025
+    #[value(name = "2025")]
+    Y2025,
+}
+
+impl From<SupportedYear> for BasYear {
+    fn from(year: SupportedYear) -> Self {
+        match year {
+            SupportedYear::Y2025 => BasYear::Y2025,
+        }
+    }
+}
 
 #[derive(Parser)]
+#[command(name = "bok")]
 struct BokArgs {
     #[command(subcommand)]
     command: BokCommand,
@@ -30,12 +71,28 @@ enum BokCommand {
     Log { r#ref: Option<String> },
     /// Initialize a book from a new year.
     Init {
-        year: usize,
+        year: SupportedYear,
         #[clap(long, short, default_value = ".bok")]
         directory: Option<PathBuf>,
         #[clap(long, short, default_value = "en")]
-        language: String,
+        language: Language,
     },
+    /// Generate shell completions
+    Completions {
+        /// The shell to generate completions for
+        shell: Shell,
+    },
+    /// List all available accounts for the current year
+    Accounts,
+}
+
+fn print_completions<G: Generator>(generator: G, cmd: &mut clap::Command) {
+    generate(
+        generator,
+        cmd,
+        cmd.get_name().to_string(),
+        &mut io::stdout(),
+    );
 }
 
 fn main() -> Result<()> {
@@ -43,30 +100,36 @@ fn main() -> Result<()> {
 
     let default_path = current_dir()?.join(".bok");
 
-    if let BokCommand::Init {
-        year,
-        directory,
-        language,
-    } = args.command
-    {
-        let year = (match year {
-            2025 => Some(BasYear::Y2025),
-            _ => None,
-        })
-        .context("No Chart of account for the given year")?;
-        let language = (match language.as_str() {
-            "sv" => Some(BasLanguange::SV),
-            "en" => Some(BasLanguange::EN),
-            _ => None,
-        })
-        .context("No Chart of account for the given language")?;
-        let accs = get_bas_plan(year, language).context("Failed to get BAS plan")?;
-        Ledger::init(year as usize, directory.unwrap_or(default_path), accs)?;
-        println!("Ledger initialized");
-        return Ok(());
+    // Handle commands that don't need an existing ledger
+    match args.command {
+        BokCommand::Init {
+            year,
+            directory,
+            language,
+        } => {
+            let bas_year: BasYear = year.into();
+            let bas_language: BasLanguange = language.into();
+            let accs = get_bas_plan(bas_year, bas_language).context("Failed to get BAS plan")?;
+            Ledger::init(bas_year as usize, directory.unwrap_or(default_path), accs)?;
+            println!("Ledger initialized");
+            return Ok(());
+        }
+        BokCommand::Completions { shell } => {
+            let mut cmd = BokArgs::command();
+            print_completions(shell, &mut cmd);
+            // Append dynamic completions based on shell type
+            match shell {
+                Shell::Fish => print!("{}", fish_dynamic_completions()),
+                Shell::Bash => print!("{}", bash_dynamic_completions()),
+                Shell::Zsh => print!("{}", zsh_dynamic_completions()),
+                _ => {}
+            }
+            return Ok(());
+        }
+        _ => {}
     }
 
-    let mut ledger = Ledger::from_dir(default_path)?;
+    let mut ledger = Ledger::from_dir(default_path.clone())?;
     match args.command {
         BokCommand::Rec {
             debit: left,
@@ -95,8 +158,17 @@ fn main() -> Result<()> {
             let out = ledger.show_log(hash)?;
             print!("{}", out);
         }
-        BokCommand::Init { .. } => {
-            panic!("Shouldn't happen!")
+        BokCommand::Accounts => {
+            let chart = ledger.chart_of_accounts()?;
+            for account in chart {
+                println!(
+                    "{}\t{:?}\t{}",
+                    account.account_number, account.account_type, account.name,
+                );
+            }
+        }
+        BokCommand::Init { .. } | BokCommand::Completions { .. } => {
+            unreachable!("Already handled above")
         }
     }
     Ok(())

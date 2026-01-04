@@ -1,13 +1,13 @@
 use std::{
     collections::{HashMap, hash_map::Entry as HashEntry},
     fs::{self, create_dir_all, read, write},
-    io::{Cursor, Error, ErrorKind, Result},
+    io::{Cursor, Error, ErrorKind},
     path::PathBuf,
 };
 
 use chrono::{Local, NaiveDate, Utc};
 
-use crate::{Entry, EntryLine, chart_of_accounts::ChartOfAccount};
+use crate::{BokError, Entry, EntryLine, Result, chart_of_accounts::ChartOfAccount};
 
 pub struct Ledger {
     head: Entry,
@@ -31,10 +31,7 @@ impl AsRef<str> for EntryHash {
 impl Ledger {
     pub fn init(year: usize, location: PathBuf, chart: ChartOfAccount) -> Result<Self> {
         if location.is_dir() {
-            return Err(Error::new(
-                ErrorKind::DirectoryNotEmpty,
-                "Directory isn't empty",
-            ));
+            return Err(BokError::Initialization);
         }
         create_dir_all(&location)?;
 
@@ -61,10 +58,7 @@ impl Ledger {
 
     pub fn from_dir(location: PathBuf) -> Result<Self> {
         if !location.is_dir() {
-            return Err(Error::new(
-                std::io::ErrorKind::NotADirectory,
-                "Directory doesn't exist",
-            ));
+            return Err(BokError::BadLedger);
         }
         let head_path = location.join("HEAD");
         let head_hash = String::from_utf8(read(&head_path)?)
@@ -113,9 +107,9 @@ impl Ledger {
             return Ok(EntryHash(self.head_hash.clone()));
         }
         match &self.find_hash(entry_ref)?[..] {
-            [] => Err(Error::new(ErrorKind::NotFound, "ref not found")),
+            [] => Err(BokError::RefNotFound),
             [entry_hash] => Ok(entry_hash.clone()),
-            _ => Err(Error::new(ErrorKind::TooManyLinks, "To many refs match")),
+            _ => Err(BokError::ToManyMatches),
         }
     }
 
@@ -130,8 +124,8 @@ impl Ledger {
             })
             .filter_map(|r| match r {
                 Ok(s) if s.starts_with(hash) => Some(Ok(EntryHash(s))),
-                Ok(_) => None,          // Skip entries that don't match
-                Err(e) => Some(Err(e)), // Propagate errors
+                Ok(_) => None,                 // Skip entries that don't match
+                Err(e) => Some(Err(e.into())), // Propagate errors
             })
             .collect()
     }
@@ -159,6 +153,40 @@ impl Ledger {
 
         let last_entry = self.get_entry(&next_hash)?;
         result += &last_entry.show_short()?;
+        Ok(result)
+    }
+
+    /// Returns the chart of accounts from the origin entry
+    pub fn chart_of_accounts(&mut self) -> Result<&ChartOfAccount> {
+        let first_entry = self.head_hash.clone();
+        let origin_hash = {
+            let mut hash = self.from_ref(&first_entry)?;
+            while let Entry::Entry { previous_entry, .. } = self.get_entry(&hash)? {
+                let entry_ref = previous_entry.clone();
+                hash = self.from_ref(&entry_ref)?;
+            }
+            hash
+        };
+        if let Entry::Origin { chart, .. } = self.get_entry(&origin_hash)? {
+            return Ok(chart);
+        }
+        Err(BokError::BadLedger)
+    }
+
+    /// Lists all entries with their short hash and description.
+    /// No ordering is used here
+    pub fn list_entries(&mut self) -> Result<Vec<(String, String)>> {
+        let all_hashes = self.find_hash("")?;
+        let mut result = Vec::new();
+        for hash in all_hashes {
+            let entry = self.get_entry(&hash)?;
+            let short_hash = &hash.0[..6.min(hash.0.len())];
+            let description = match entry {
+                Entry::Entry { description, .. } => description.clone(),
+                Entry::Origin { year, .. } => format!("Origin ({})", year),
+            };
+            result.push((short_hash.to_string(), description));
+        }
         Ok(result)
     }
 }

@@ -18,7 +18,7 @@ impl Entry {
             Entry::Origin {
                 timestamp,
                 year,
-                chart,
+                chart: _,
             } => {
                 format!(
                     "({}) {}, Origin of {}\n",
@@ -75,9 +75,9 @@ impl Entry {
     pub fn show_short(&self) -> Result<String> {
         match self {
             Entry::Origin { year, .. } => Ok(format!(
-                "----------------{}---------------({})\n",
+                "{}\t----------------{}---------------\n",
+                self.short_hash()?,
                 year,
-                self.short_hash()?
             )),
             Entry::Entry {
                 event_date,
@@ -94,11 +94,11 @@ impl Entry {
                     description.clone()
                 };
                 Ok(format!(
-                    "{}: {}, {} ({})\n",
+                    "{}\t{}: {}, {}\n",
+                    self.short_hash()?,
                     event_date,
                     name,
                     desc,
-                    self.short_hash()?
                 ))
             }
         }

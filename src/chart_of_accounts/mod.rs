@@ -6,10 +6,10 @@ mod serde;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Account {
-    account_number: usize,
-    name: String,
-    description: String,
-    account_type: AccountType,
+    pub account_number: usize,
+    pub name: String,
+    pub description: String,
+    pub account_type: AccountType,
 }
 
 impl Account {
