@@ -61,12 +61,12 @@ fn create_account(row_data: BasRowData) -> Result<Account> {
     let class = (row_data.account_number / 1000) as u8;
     let account_type = bas_class_to_type(class)?;
 
-    Ok(Account {
-        account_number: row_data.account_number,
-        name: row_data.description.clone(),
-        description: row_data.description,
+    Ok(Account::new(
+        row_data.account_number,
+        row_data.description.clone(),
+        row_data.description,
         account_type,
-    })
+    ))
 }
 
 /// Opens the BAS workbook and returns the first worksheet range

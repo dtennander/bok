@@ -7,6 +7,7 @@ use hex::ToHex;
 use sha2::{Digest, Sha256};
 
 use super::{Entry, EntryLine};
+use crate::chart_of_accounts::Account;
 use crate::read::read;
 use crate::tee_writer::TeeWriter;
 use flate2::write::GzEncoder;
@@ -17,9 +18,11 @@ impl Entry {
     /// Returns the hash as the result if successful
     ///
     /// Origin Variant (0x00):
-    /// +--------+--------------------------+-------------------------+
-    /// | 0x00   | year (8 bytes)           | timestamp (8 bytes)     |
-    /// +--------+--------------------------+-------------------------+
+    /// +--------+------------+---------------+------------------+
+    /// | 0x00   | year (8 B) | timestamp (8B)| chart_count (4 B)|
+    /// +--------+------------+---------------+------------------+
+    /// | accounts data (variable length, repeated chart_count times) |
+    /// +-------------------------------------------------------------+
     ///
     /// Entry Variant (0x01):
     /// +--------+------------+-----------------+----------------+----------------+
@@ -53,6 +56,12 @@ impl Entry {
                 // Write timestamp as 8-byte little-endian
                 let epoch_secs = timestamp.timestamp();
                 output.write_all(&epoch_secs.to_le_bytes())?;
+                // Write chart count (4 bytes, little-endian)
+                output.write_all(&(chart.len() as u32).to_le_bytes())?;
+                // Write each Account
+                for account in chart {
+                    account.serialize(&mut output)?;
+                }
             }
 
             Entry::Entry {
@@ -127,10 +136,17 @@ impl Entry {
                 let timestamp = DateTime::from_timestamp(epoch_secs, 0).ok_or_else(|| {
                     std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp")
                 })?;
+                // Read chart count (4 bytes, little-endian)
+                read!(chart_count(u32) from reader using buffer);
+                // Read each Account
+                let mut chart = Vec::with_capacity(chart_count as usize);
+                for _ in 0..chart_count {
+                    chart.push(Account::deserialize(&mut reader)?);
+                }
                 Ok(Entry::Origin {
                     year,
                     timestamp,
-                    chart: vec![],
+                    chart,
                 })
             }
             0x01 => {
@@ -248,7 +264,7 @@ mod tests {
                 Entry::Origin {
                     timestamp: *ArbDateTime::arbitrary(g),
                     year: ArbDateTime::arbitrary(g).year() as u64,
-                    chart: vec![],
+                    chart: Vec::<Account>::arbitrary(g),
                 }
             } else {
                 Entry::Entry {
