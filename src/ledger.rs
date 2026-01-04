@@ -7,7 +7,10 @@ use std::{
 
 use chrono::{Local, NaiveDate, Utc};
 
-use crate::{BokError, Entry, EntryLine, Result, chart_of_accounts::ChartOfAccount};
+use crate::{
+    BokError, Entry, EntryLine, Result,
+    chart_of_accounts::{Account, ChartOfAccount},
+};
 
 pub struct Ledger {
     head: Entry,
@@ -26,6 +29,11 @@ impl AsRef<str> for EntryHash {
     fn as_ref(&self) -> &str {
         <String as AsRef<str>>::as_ref(&self.0)
     }
+}
+
+pub enum ReferencedObject {
+    Entry(EntryHash),
+    Account(Account),
 }
 
 impl Ledger {
@@ -102,13 +110,22 @@ impl Ledger {
         Ok(EntryHash(self.head_hash.clone()))
     }
 
-    pub fn from_ref(&self, entry_ref: &str) -> Result<EntryHash> {
+    pub fn from_ref(&mut self, entry_ref: &str) -> Result<ReferencedObject> {
         if entry_ref == "HEAD" {
-            return Ok(EntryHash(self.head_hash.clone()));
+            return Ok(ReferencedObject::Entry(EntryHash(self.head_hash.clone())));
+        }
+        if let Ok(account) = entry_ref.parse() {
+            if let Some(account) = self
+                .chart_of_accounts()?
+                .iter()
+                .find(|a| a.account_number == account)
+            {
+                return Ok(ReferencedObject::Account(account.clone()));
+            }
         }
         match &self.find_hash(entry_ref)?[..] {
             [] => Err(BokError::RefNotFound),
-            [entry_hash] => Ok(entry_hash.clone()),
+            [entry_hash] => Ok(ReferencedObject::Entry(entry_hash.clone())),
             _ => Err(BokError::ToManyMatches),
         }
     }
@@ -148,7 +165,7 @@ impl Ledger {
         while let entry @ Entry::Entry { previous_entry, .. } = self.get_entry(&next_hash)? {
             result += &entry.show_short()?;
             let next_ref = previous_entry.clone();
-            next_hash = self.from_ref(&next_ref)?;
+            next_hash = self.find_hash(&next_ref)?[0].clone();
         }
 
         let last_entry = self.get_entry(&next_hash)?;
@@ -160,10 +177,10 @@ impl Ledger {
     pub fn chart_of_accounts(&mut self) -> Result<&ChartOfAccount> {
         let first_entry = self.head_hash.clone();
         let origin_hash = {
-            let mut hash = self.from_ref(&first_entry)?;
+            let mut hash = self.find_hash(&first_entry)?[0].clone();
             while let Entry::Entry { previous_entry, .. } = self.get_entry(&hash)? {
                 let entry_ref = previous_entry.clone();
-                hash = self.from_ref(&entry_ref)?;
+                hash = self.find_hash(&entry_ref)?[0].clone();
             }
             hash
         };

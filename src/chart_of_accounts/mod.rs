@@ -27,6 +27,13 @@ impl Account {
             account_type,
         }
     }
+
+    pub fn show(&self) -> String {
+        format!(
+            "{}\t{:?}\t{}",
+            self.account_number, self.account_type, self.name,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

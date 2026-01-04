@@ -2,7 +2,7 @@ use std::{env::current_dir, io, path::PathBuf};
 
 use anyhow::{Context, Result};
 use bok::chart_of_accounts::bas::{BasLanguange, BasYear, get_bas_plan};
-use bok::{EntryLine, Ledger, Side};
+use bok::{EntryLine, Ledger, ReferencedObject, Side};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Generator, Shell, generate};
 
@@ -147,16 +147,25 @@ fn main() -> Result<()> {
             let entry = ledger.get_entry(&entry_ref)?;
             println!("{}", entry.show());
         }
-        BokCommand::Show { r#ref: entry_ref } => {
-            let hash = ledger.from_ref(&entry_ref)?;
-            let entry = ledger.get_entry(&hash)?;
-            let show = entry.show();
-            print!("{}", show);
-        }
+        BokCommand::Show { r#ref: entry_ref } => match ledger.from_ref(&entry_ref)? {
+            ReferencedObject::Entry(hash) => {
+                let entry = ledger.get_entry(&hash)?;
+                let show = entry.show();
+                print!("{}", show);
+            }
+            ReferencedObject::Account(account) => {
+                let show = account.show();
+                print!("{}", show);
+            }
+        },
         BokCommand::Log { r#ref: start } => {
-            let hash = ledger.from_ref(&start.unwrap_or("HEAD".to_string()))?;
-            let out = ledger.show_log(hash)?;
-            print!("{}", out);
+            match ledger.from_ref(&start.unwrap_or("HEAD".to_string()))? {
+                ReferencedObject::Account(_) => println!("Can't show log for account"),
+                ReferencedObject::Entry(hash) => {
+                    let out = ledger.show_log(hash)?;
+                    print!("{}", out);
+                }
+            }
         }
         BokCommand::Accounts => {
             let chart = ledger.chart_of_accounts()?;

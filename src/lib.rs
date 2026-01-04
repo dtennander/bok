@@ -8,4 +8,4 @@ pub(crate) mod tee_writer;
 
 pub use entry::{Entry, EntryLine, Side};
 pub use error::{BokError, Result};
-pub use ledger::Ledger;
+pub use ledger::{Ledger, ReferencedObject};
